@@ -1,13 +1,17 @@
 
+import os
+import warnings
+from torch import load, save
 import torch.nn as nn
 
 
 class ACGenerator(nn.Module):
 
-    def __init__(self, image_size, ):
+    def __init__(self,num_classes):
         super(ACGenerator, self).__init__()
 
-        self.image_size = image_size
+        self.num_classes = num_classes
+
         self.fc1 = nn.Linear(110, 768)
         self.cnv1 = nn.ConvTranspose2d(768, 384, kernel_size=5, stride=2, padding=0, bias=False)
         self.norm512 = nn.BatchNorm2d(384)
@@ -18,12 +22,12 @@ class ACGenerator(nn.Module):
         self.cnv3 = nn.ConvTranspose2d(256, 192, kernel_size=5, stride=2, padding=0, bias=False)
         self.norm192 = nn.BatchNorm2d(192)
 
-        self.cnv4 = nn.ConvTranspose2d(192, self.image_size, kernel_size=5, stride=2, padding=0, bias=False)
+        self.cnv4 = nn.ConvTranspose2d(192, 64, kernel_size=5, stride=2, padding=0, bias=False)
         self.norm64 = nn.BatchNorm2d(64)
 
-        self.cnv5 = nn.ConvTranspose2d(self.image_size, 3, kernel_size=8, stride=2, padding=0, bias=False)
-        self.tanh = nn.Tanh()
+        self.cnv5 = nn.ConvTranspose2d(64, 3, kernel_size=8, stride=2, padding=0, bias=False)
 
+        self.tanh = nn.Tanh()
         self.relu = nn.ReLU(True)
 
     def forward(self, input):
@@ -46,3 +50,20 @@ class ACGenerator(nn.Module):
         output = self.tanh(layer)
 
         return output
+
+
+    def Load(self, path):
+        path = "./saves/" + path
+        if not os.path.exists(path):
+            raise ValueError("Saved model not provided, unable to load!")
+        else:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                data = load(path)
+                self.load_state_dict(data.state_dict())
+
+    def Save(self, path):
+        if not os.path.exists("./saves"):
+            os.mkdir("./saves")
+
+        save(self, path)
