@@ -1,9 +1,10 @@
 import os
 import torchvision.datasets as data
+import torchvision.transforms as transforms
 import torchvision.utils as vutils
 from torch.autograd import Variable
-from src.acgan_generator import ACGenerator
-from src.acgan_discriminator import ACDiscriminator
+from src.imagenet_model import ImageNetGenerator,ImageNetDiscriminator
+from src.cifar10_model import Cifar10Generator, Cifar10Discriminator
 from src.network import BaseNetwork
 import matplotlib
 import matplotlib.pyplot as plt
@@ -12,24 +13,25 @@ import torch.optim as optim
 import numpy as np
 import src.util as util
 import torch.nn as nn
+import warnings
+from torch import load, save
 import random
+
 
 class ACGAN(BaseNetwork):
 
-    def __init__(self, config, transform):
+    def __init__(self, config):
         super(ACGAN, self).__init__(config)
 
         self.config = config
         if not os.path.exists("./saves"):
             os.makedirs("./saves")
 
-        self.dataset = data.ImageFolder(root='./dataset', transform=transform)
-        self.classes = self.dataset.classes
-        self.num_classes = len(self.dataset.classes)
-        self.train, self.val, self.test = util.split_dataset(self.dataset, self.batch_size)
+        self.LoadDataset()
 
-        self.generator = ACGenerator(self.num_classes)
-        self.discriminator = ACDiscriminator(self.num_classes)
+        self.LoadModels()
+
+        self.train, self.val, self.test = util.split_dataset(self.dataset, self.batch_size)
 
         self.generator_optimizer = optim.Adam(self.generator.parameters(),
                                               lr=self.learning, betas=(0.5, 0.999))
@@ -41,6 +43,54 @@ class ACGAN(BaseNetwork):
             self.generator = self.generator.cuda()
 
         self.Train()
+
+    def LoadDataset(self):
+
+        image_size = int(self.config["image_size"])
+
+        self.dataset_type = self.config["dataset"]
+
+        download = not os.path.exists("./dataset")
+
+        if self.dataset_type == "imagenet":
+            transform = transforms.Compose([
+                transforms.CenterCrop(image_size * 2),
+                transforms.Resize(image_size),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ])
+
+            self.dataset = data.ImageFolder(root='./dataset', transform=transform)
+            self.classes = self.dataset.classes
+            self.num_classes = len(self.dataset.classes)
+
+        elif self.dataset_type == "cifar10":
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ])
+
+            self.classes = ['plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+            self.num_classes = 10
+            self.dataset = data.CIFAR10(root='./dataset', transform=transform, download=download)
+        else:
+            print("ERROR: Unsupported Dataset Type")
+
+    def LoadModels(self):
+
+        if self.dataset_type == "imagenet":
+            self.generator = ImageNetGenerator(self.num_classes)
+            self.discriminator = ImageNetDiscriminator(self.num_classes)
+
+        elif self.dataset_type == "cifar10":
+            self.generator = Cifar10Generator(self.num_classes)
+            self.discriminator = Cifar10Discriminator(self.num_classes)
+
+        if "saved_generator" in self.config:
+            self.generator = self.Load(self.config["saved_generator"], self.generator)
+
+        if "saved_discriminator" in self.config:
+            self.discriminator = self.Load(self.config["saved_discriminator"], self.discriminator)
 
     def Train(self):
 
@@ -78,8 +128,8 @@ class ACGAN(BaseNetwork):
             historical_generator_error.append(avg_generator_error)
 
             if self.verbose:
-                print("\tAverage Discriminator Accuracy: {}".format(avg_discriminator_error))
-                print("\tAverage Generator Accuracy: {}".format(avg_generator_error))
+                print("\tAverage Discriminator Loss: {}".format(avg_discriminator_error))
+                print("\tAverage Generator Loss: {}".format(avg_generator_error))
 
             val_dis_accuracy, val_discriminator_error, val_generator_error = self.Validate()
             historical_val_dis_accuracy.append(val_dis_accuracy)
@@ -93,7 +143,7 @@ class ACGAN(BaseNetwork):
                                   historical_val_generator_error)
 
             if self.save_period and (epoch + 1) % self.save_period == 0:
-                self.Save(temp_epoch=(epoch+1))
+                self.SaveModels(temp_epoch=(epoch+1))
 
     def GetRealVariables(self, data):
 
@@ -116,7 +166,8 @@ class ACGAN(BaseNetwork):
 
     def GetFakeVariables(self, mini_batchsize, target_class=None):
 
-        fake_noise = np.random.normal(0, 1, (mini_batchsize, 110))
+        fake_size = 100 + self.num_classes
+        fake_noise = np.random.normal(0, 1, (mini_batchsize, fake_size))
 
         if target_class is None:
             fake_labels = np.random.randint(0, self.num_classes, mini_batchsize)
@@ -310,23 +361,24 @@ class ACGAN(BaseNetwork):
 
     def GenerateSampleImages(self, path='./saves/img.png'):
 
-        fig = plt.figure(figsize=(64, 64))
+
+        fig = plt.figure(figsize=(32, 32))
         for i in range(self.num_classes):
             fake_var, fake_dis_var, fake_class_var = self.GetFakeVariables(1, target_class=i)
-            fake_var_cpu = fake_var.data.cpu()
-            fake_var_cpu = torch.clamp(fake_var_cpu, min=0.0, max=1.0).cpu()[0]
-            image = np.transpose(fake_var_cpu, (2, 1, 0))
+            fake_var_cpu = fake_var.data.cpu().numpy()[0]
             ax = fig.add_subplot(5, 2, i+1)
+            image = (fake_var_cpu.transpose(1, 2, 0) + 1)/2
             ax.imshow(image)
             ax.get_xaxis().set_visible(False)
             ax.get_yaxis().set_visible(False)
             ax.set_title(self.classes[i], size=60)
+            vutils.save_image(fake_var.data.cpu(), "./saves/{}.png".format(self.classes[i]))
 
         plt.tight_layout()
         plt.savefig(path)
         plt.close()
 
-    def Save(self, temp_epoch=None):
+    def SaveModels(self, temp_epoch=None):
 
         if temp_epoch is None:
             temp_epoch = self.epochs
@@ -336,14 +388,27 @@ class ACGAN(BaseNetwork):
 
         filename = "./saves/epochs_{}_batch_{}_learning_{}".format(temp_epoch, self.batch_size,
                                                                                     learning_string)
-
-        self.discriminator.Save(filename+"_discriminator.pt")
-        self.generator.Save(filename+"_generator.pt")
-
-    def Load(self, path):
-        self.discriminator.Load(path)
-        self.generator.Load(path)
+        self.discriminator = self.Save(filename+"_discriminator.pt",self.discriminator)
+        self.generator = self.Save(filename+"_generator.pt", self.generator)
 
 
 
+    def Load(self, path, obj):
+        path = path
+        if not os.path.exists(path):
+            raise ValueError("Saved model not provided, unable to load!")
+        else:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                data = load(path)
+                obj.load_state_dict(data.state_dict())
+        return obj
+
+
+    def Save(self, path, obj):
+        if not os.path.exists("./saves"):
+            os.mkdir("./saves")
+
+        obj = save(obj, path)
+        return obj
 

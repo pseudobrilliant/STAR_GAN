@@ -4,14 +4,14 @@ sudo apt-get install git python3-pip python3-dev build-essential swig python-whe
 
 sudo apt-get update
 
-sudo pip3 install virtualenv
+pip3 install virtualenv
 
 virtualenv --system-site-packages -p python3 ./venv
 
-source ./venv/bin/activate
+source venv/bin/activate
 
-sudo pip3 install -r requirements.txt
+pip3 install -r requirements.txt
 
-sudo pip3 install -r torch
+pip3 install -r torch
 
-sudo pip3 install -r torchvision
+pip3 install -r torchvision
