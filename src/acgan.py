@@ -18,6 +18,8 @@ import warnings
 from torch import load, save
 import random
 
+#Parts of this implementation were inspired by gitlimlabs ACGAN implimentation https://github.com/gitlimlab/ACGAN-PyTorch.
+#Primarily the model structures, and the implementation of both Imagenet and CIFAR10 models
 
 class ACGAN(BaseNetwork):
 
