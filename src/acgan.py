@@ -89,6 +89,9 @@ class ACGAN(BaseNetwork):
             self.generator = Cifar10Generator(self.num_classes)
             self.discriminator = Cifar10Discriminator(self.num_classes)
 
+        self.generator.apply(BaseNetwork.weights_init)
+        self.discriminator.apply(BaseNetwork.weights_init)
+
         if "saved_generator" in self.config:
             self.generator = self.Load(self.config["saved_generator"], self.generator)
 
@@ -362,13 +365,10 @@ class ACGAN(BaseNetwork):
 
         self.GenerateSampleImages("./saves/training_samples_{}_epochs.png".format(epoch))
 
-#TODO Need to fix blurry image output in plot
     def GenerateSampleImages(self, path='./saves/img.png'):
         plt.ioff()
         fig, ax = plt.subplots(int(self.num_classes / 5), 5, figsize=(32, 32))
-        fig.set_size_inches(100,100)
-        dpi = fig.get_dpi()
-        fig.set_size_inches(2500.0 / float(dpi), 2500.0 / float(dpi))
+        fig.set_size_inches(6,3)
 
         for i in range(self.num_classes):
             fake_var, fake_dis_var, fake_class_var = self.GetFakeVariables(1, target_class=i)
@@ -380,7 +380,7 @@ class ACGAN(BaseNetwork):
             row = int(i/5)
             col = int(i%5)
             ax[row, col].cla()
-            ax[row, col].imshow(image, interpolation='nearest')
+            ax[row, col].imshow(image, interpolation='none')
             ax[row, col].get_xaxis().set_visible(False)
             ax[row, col].get_yaxis().set_visible(False)
             ax[row, col].set_title(self.classes[i], fontsize=60)
