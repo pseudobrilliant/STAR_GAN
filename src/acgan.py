@@ -6,6 +6,7 @@ from torch.autograd import Variable
 from src.imagenet_model import ImageNetGenerator,ImageNetDiscriminator
 from src.cifar10_model import Cifar10Generator, Cifar10Discriminator
 from src.network import BaseNetwork
+from PIL import Image
 import matplotlib
 import matplotlib.pyplot as plt
 import torch
@@ -359,23 +360,32 @@ class ACGAN(BaseNetwork):
 
         self.GenerateSampleImages("./saves/training_samples_{}_epochs.png".format(epoch))
 
+#TODO Need to fix blurry image output in plot
     def GenerateSampleImages(self, path='./saves/img.png'):
+        plt.ioff()
+        fig, ax = plt.subplots(int(self.num_classes / 5), 5, figsize=(32, 32))
+        fig.set_size_inches(100,100)
+        dpi = fig.get_dpi()
+        fig.set_size_inches(2500.0 / float(dpi), 2500.0 / float(dpi))
 
-
-        fig = plt.figure(figsize=(32, 32))
         for i in range(self.num_classes):
             fake_var, fake_dis_var, fake_class_var = self.GetFakeVariables(1, target_class=i)
-            fake_var_cpu = fake_var.data.cpu().numpy()[0]
-            ax = fig.add_subplot(5, 2, i+1)
-            image = (fake_var_cpu.transpose(1, 2, 0) + 1)/2
-            ax.imshow(image)
-            ax.get_xaxis().set_visible(False)
-            ax.get_yaxis().set_visible(False)
-            ax.set_title(self.classes[i], size=60)
+            fake_var_cpu = fake_var.data[0]
+
+            grid = vutils.make_grid(tensor=fake_var_cpu)
+            ndarr = grid.mul(255).clamp(0, 255).byte().permute(1, 2, 0).cpu().numpy()
+            image = Image.fromarray(ndarr)
+            row = int(i/5)
+            col = int(i%5)
+            ax[row, col].cla()
+            ax[row, col].imshow(image, interpolation='nearest')
+            ax[row, col].get_xaxis().set_visible(False)
+            ax[row, col].get_yaxis().set_visible(False)
+            ax[row, col].set_title(self.classes[i], fontsize=60)
             vutils.save_image(fake_var.data.cpu(), "./saves/{}.png".format(self.classes[i]))
 
         plt.tight_layout()
-        plt.savefig(path)
+        plt.savefig(path, bbox_inches='tight', dpi=100)
         plt.close()
 
     def SaveModels(self, temp_epoch=None):
