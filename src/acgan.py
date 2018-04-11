@@ -388,8 +388,8 @@ class ACGAN(BaseNetwork):
 
         filename = "./saves/epochs_{}_batch_{}_learning_{}".format(temp_epoch, self.batch_size,
                                                                                     learning_string)
-        self.discriminator = self.Save(filename+"_discriminator.pt",self.discriminator)
-        self.generator = self.Save(filename+"_generator.pt", self.generator)
+        self.Save(filename+"_discriminator.pt",self.discriminator)
+        self.Save(filename+"_generator.pt", self.generator)
 
 
 
@@ -410,5 +410,4 @@ class ACGAN(BaseNetwork):
             os.mkdir("./saves")
 
         obj = save(obj, path)
-        return obj
 
