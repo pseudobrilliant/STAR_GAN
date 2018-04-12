@@ -121,9 +121,6 @@ class ACGAN(BaseNetwork):
 
                 discriminator_error, generator_error = self.TrainSamples(real_variables, fake_variables)
 
-                del real_variables, fake_variables
-                torch.cuda.empty_cache()
-
                 avg_discriminator_error += discriminator_error
                 avg_generator_error += generator_error
                 count += 1
@@ -181,7 +178,7 @@ class ACGAN(BaseNetwork):
             fake_labels = np.full(mini_batchsize, target_class)
 
         class_onehot = np.zeros((mini_batchsize, self.num_classes))
-        class_onehot[0:mini_batchsize, fake_labels] = 1
+        class_onehot[np.arange(mini_batchsize), fake_labels] = 1
         fake_noise[0:mini_batchsize, :self.num_classes] = class_onehot
 
         fake_noise = (torch.from_numpy(fake_noise)).float()
@@ -242,11 +239,6 @@ class ACGAN(BaseNetwork):
 
         self.generator_optimizer.step()
 
-        del discrimination_criterion, classification_criterion, \
-            real_discriminator_error, real_classification_error, real_discrimination_error, \
-            fake_discriminator_error, fake_classification_error, fake_discrimination_error
-        torch.cuda.empty_cache()
-
         return total_discriminator_error_cpu, total_generator_error_cpu
 
     def Validate(self):
@@ -302,7 +294,7 @@ class ACGAN(BaseNetwork):
         fake_classification_error = classification_criterion(fake_class_result, fake_class_var)
         fake_discriminator_error = fake_discrimination_error + fake_classification_error
 
-        dis_accuracy = (real_dis_accurate_perc + fake_dis_accurate_perc) / (len(real_var.data) * 2) * 100
+        dis_accuracy = (real_dis_accurate + fake_dis_accurate) / (len(real_var.data) * 2) * 100
 
         total_discriminator_error_cpu = (fake_discriminator_error + real_discriminator_error).data.cpu().numpy()[0]
 
@@ -383,7 +375,7 @@ class ACGAN(BaseNetwork):
             ax[row, col].imshow(image, interpolation='none')
             ax[row, col].get_xaxis().set_visible(False)
             ax[row, col].get_yaxis().set_visible(False)
-            ax[row, col].set_title(self.classes[i], fontsize=60)
+            ax[row, col].set_title(self.classes[i], fontsize=15)
             vutils.save_image(fake_var.data.cpu(), "./saves/{}.png".format(self.classes[i]))
 
         plt.tight_layout()
