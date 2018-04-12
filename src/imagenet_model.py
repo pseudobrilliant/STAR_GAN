@@ -31,7 +31,7 @@ class ImageNetDiscriminator(nn.Module):
         self.fc_discrimination = nn.Linear(86528, 1)
         self.fc_prob_class = nn.Linear(86528, self.num_classes)
 
-        self.softmax = nn.LogSoftmax(dim=0)
+        self.softmax = nn.Softmax(dim=1)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, input):
@@ -69,7 +69,7 @@ class ImageNetDiscriminator(nn.Module):
         fc_discrimination = self.fc_discrimination(flat6)
         fc_prob_class = self.fc_prob_class(flat6)
 
-        discrimination_results = self.sigmoid(fc_discrimination)
+        discrimination_results = self.sigmoid(fc_discrimination).view(-1, 1).squeeze(1)
         class_results = self.softmax(fc_prob_class)
 
         return discrimination_results, class_results

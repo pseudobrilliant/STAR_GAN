@@ -34,18 +34,15 @@ class ACGAN(BaseNetwork):
 
         self.LoadModels()
 
-        self.train, self.val, self.test = util.split_dataset(self.dataset, self.batch_size)
+        if self.train:
+            self.train, self.val, self.test = util.split_dataset(self.dataset, self.batch_size)
 
-        self.generator_optimizer = optim.Adam(self.generator.parameters(),
-                                              lr=self.learning, betas=(0.5, 0.999))
-        self.discriminator_optimizer = optim.Adam(self.discriminator.parameters(),
+            self.generator_optimizer = optim.Adam(self.generator.parameters(),
                                                   lr=self.learning, betas=(0.5, 0.999))
+            self.discriminator_optimizer = optim.Adam(self.discriminator.parameters(),
+                                                      lr=self.learning, betas=(0.5, 0.999))
 
-        if self.is_cuda:
-            self.discriminator = self.discriminator.cuda()
-            self.generator = self.generator.cuda()
-
-        self.Train()
+            self.Train()
 
     def LoadDataset(self):
 
@@ -88,6 +85,10 @@ class ACGAN(BaseNetwork):
         elif self.dataset_type == "cifar10":
             self.generator = Cifar10Generator(self.num_classes)
             self.discriminator = Cifar10Discriminator(self.num_classes)
+
+        if self.is_cuda:
+            self.discriminator = self.discriminator.cuda()
+            self.generator = self.generator.cuda()
 
         self.generator.apply(BaseNetwork.weights_init)
         self.discriminator.apply(BaseNetwork.weights_init)
@@ -156,7 +157,7 @@ class ACGAN(BaseNetwork):
         real_var = Variable(batch)
 
         real_dis_val = torch.ones(mini_batchsize)
-        real_dis_var = Variable(real_dis_val).unsqueeze(1)
+        real_dis_var = Variable(real_dis_val)
 
         real_class_var = Variable(labels)
 
@@ -179,13 +180,13 @@ class ACGAN(BaseNetwork):
 
         class_onehot = np.zeros((mini_batchsize, self.num_classes))
         class_onehot[np.arange(mini_batchsize), fake_labels] = 1
-        fake_noise[0:mini_batchsize, :self.num_classes] = class_onehot
-
-        fake_noise = (torch.from_numpy(fake_noise)).float()
+        fake_noise[np.arange(mini_batchsize), :self.num_classes] = class_onehot[np.arange(mini_batchsize)]
+        fake_noise = torch.from_numpy(fake_noise).float().view(mini_batchsize, fake_size, 1, 1)
+        fake_noise = fake_noise.view(mini_batchsize, 110, 1, 1)
         fake_noise_var = Variable(fake_noise)
 
         fake_dis_val = torch.zeros(mini_batchsize)
-        fake_dis_var = Variable(fake_dis_val).unsqueeze(1)
+        fake_dis_var = Variable(fake_dis_val)
 
         fake_class_val = torch.from_numpy(fake_labels).long()
         fake_class_var = Variable(fake_class_val)
@@ -216,7 +217,8 @@ class ACGAN(BaseNetwork):
         real_discriminator_error = real_discrimination_error + real_classification_error
         real_discriminator_error.backward()
 
-        fake_dis_result, fake_class_result = self.discriminator(fake_var.detach())
+        detach_fake = fake_var.clone().detach()
+        fake_dis_result, fake_class_result = self.discriminator(detach_fake)
 
         fake_discrimination_error = discrimination_criterion(fake_dis_result, fake_dis_var)
         fake_classification_error = classification_criterion(fake_class_result, fake_class_var)
@@ -327,23 +329,13 @@ class ACGAN(BaseNetwork):
                      historical_val_generator_error):
 
         x = [i for i in range(1, epoch + 1)]
-        plt.title("Epoch vs Discriminator Average Loss")
+        plt.title("Epoch vs Average Loss")
         plt.xlabel("Epoch")
         plt.ylabel("Average Loss")
-        plt.plot(x, historical_discriminator_error, marker='o', label='training loss')
-        plt.plot(x, historical_val_discriminator_error, marker='o', label='val loss')
+        plt.plot(x, historical_discriminator_error, marker='o', label='discriminator loss')
+        plt.plot(x, historical_val_generator_error, marker='o', label='generator loss')
         plt.legend(loc='best')
-        plt.savefig('./saves/epoch_{}_disc.png'.format(epoch))
-
-        plt.close()
-
-        plt.title("Epoch vs Generator Average Loss")
-        plt.xlabel("Epoch")
-        plt.ylabel("Average Loss")
-        plt.plot(x, historical_generator_error, marker='o', label='training loss')
-        plt.plot(x, historical_val_generator_error, marker='o', label='val loss')
-        plt.legend(loc='best')
-        plt.savefig('./saves/epoch_{}_generator.png'.format(epoch))
+        plt.savefig('./saves/epoch_{}_loss.png'.format(epoch))
 
         plt.close()
 
@@ -355,7 +347,7 @@ class ACGAN(BaseNetwork):
 
         plt.close()
 
-        self.GenerateSampleImages("./saves/training_samples_{}_epochs.png".format(epoch))
+        self.GenerateSampleImages("./saves/training_samples_{}_epochs".format(epoch))
 
     def GenerateSampleImages(self, path='./saves/img.png'):
         plt.ioff()
@@ -363,7 +355,7 @@ class ACGAN(BaseNetwork):
         fig.set_size_inches(6,3)
 
         for i in range(self.num_classes):
-            fake_var, fake_dis_var, fake_class_var = self.GetFakeVariables(1, target_class=i)
+            fake_var, fake_dis_var, fake_class_var = self.GetFakeVariables(32, target_class=i)
             fake_var_cpu = fake_var.data[0]
 
             grid = vutils.make_grid(tensor=fake_var_cpu)
@@ -379,8 +371,11 @@ class ACGAN(BaseNetwork):
             vutils.save_image(fake_var.data.cpu(), "./saves/{}.png".format(self.classes[i]))
 
         plt.tight_layout()
-        plt.savefig(path, bbox_inches='tight', dpi=100)
+        plt.savefig(path+".png", bbox_inches='tight', dpi=100)
         plt.close()
+
+        fake_var, fake_dis_var, fake_class_var = self.GetFakeVariables(self.batch_size)
+        vutils.save_image(fake_var.data.cpu(), path+"_current_samples.png")
 
     def SaveModels(self, temp_epoch=None):
 

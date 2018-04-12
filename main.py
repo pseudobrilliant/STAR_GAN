@@ -11,5 +11,6 @@ path = os.path.abspath("./")
 config.read(os.path.join(path, "config.ini"))
 
 acgan_config = config["ACGAN"]
-ACGAN(acgan_config)
+acgan = ACGAN(acgan_config)
 
+acgan.GenerateSampleImages("./saves/final_samples")
