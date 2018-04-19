@@ -232,6 +232,7 @@ class ACGAN(BaseNetwork):
                 flags = np.zeros((mini_batchsize, 1))
 
             mask = np.concatenate((mask, flags), axis=1)
+            start = self.datasets[i]["num_classes"]
 
         mask_torch = torch.from_numpy(mask)
         mask_torch = mask_torch.view(mask_torch.size(0),mask_torch.size(1),1,1)

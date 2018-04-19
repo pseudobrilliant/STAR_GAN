@@ -20,8 +20,10 @@ class ImageNetDiscriminator(nn.Module):
 
         self.cnv6 = nn.Conv2d(1024, 2048, kernel_size=4, stride=2, padding=1, bias=False)
 
+        self.leaky = nn.LeakyReLU(0.01, inplace=True)
+
         self.discrimination = nn.Conv2d(2048, 1, kernel_size=3, stride=1, padding=1, bias=False)
-        self.classifier = nn.Conv2d(2048, dimensions, kernel_size=4, bias=False)
+        self.classifier = nn.Conv2d(2048, dimensions, kernel_size=2, bias=False)
 
     def forward(self, input):
         layer = self.cnv1(input)
@@ -49,10 +51,10 @@ class ImageNetDiscriminator(nn.Module):
         return discrimination, classifications
 
 
-class Cifar10Generator(nn.Module):
+class ImageNetGenerator(nn.Module):
 
     def __init__(self, dimensions, image_size=128):
-        super(Cifar10Generator, self).__init__()
+        super(ImageNetGenerator, self).__init__()
 
         self.image_size = image_size
         self.dimensions = dimensions
