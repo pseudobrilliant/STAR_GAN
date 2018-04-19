@@ -4,6 +4,8 @@ import copy
 import numpy as np
 from torch.utils.data.sampler import SubsetRandomSampler
 from urllib.request import urlretrieve
+from progressbar import ProgressBar, Percentage, Bar
+import zipfile
 
 class PartialDataset(torch.utils.data.Dataset):
     def __init__(self, parent_ds, offset, length):
@@ -25,49 +27,32 @@ def validation_split(dataset, val_share=0.1):
     val_offset = int(len(dataset) * (1 - val_share))
     return PartialDataset(dataset, 0, val_offset), PartialDataset(dataset, val_offset, len(dataset) - val_offset)
 
+def download_dataset(dataset,url,path):
+    print("Downloading " + dataset)
+    if os.path.exists(path):
+        os.rmdir(path)
 
-def download_imagenet(classes, classids):
-    path = os.path.abspath("./")
-    path = os.path.join(path, "dataset/")
-    if not os.path.exists(path):
-        print("Downloading Imagenet Dataset ({} Classes):".format(len(classes)))
-        os.makedirs(path)
+    os.mkdir(path)
 
-        print("\tDownloading Classes (This will take some time)...")
+    zip_path = "{}/{}.zip".format(path, dataset)
+    download_url(url, zip_path)
 
-        for i in range(len(classes)):
-         download_class(path, classes[i], classids[i])
+    zip_ref = zipfile.ZipFile(zip_path, 'r')
+    zip_ref.extractall(path)
+    zip_ref.close()
 
-        print("Completed Downloading Imagenet Dataset")
+def download_url(url, path, progress=True):
+    if progress:
+        pbar = ProgressBar(widgets=[Percentage(), Bar()])
+        pbar.update(100)
+        def progress_update(count, blockSize, totalSize):
+            val = max(0, min(int(count * blockSize * float(100.0 / totalSize)), 100))
+            pbar.update(val)
 
-def download_class(path, iclass, classid):
-    class_path = path + iclass
-    list_path = class_path+'/downloads_list.txt'
+        urlretrieve(url, path, reporthook=progress_update)
+    else:
+        urlretrieve(url, path)
 
-    if not os.path.exists(class_path):
-        os.makedirs(class_path)
-
-    urlretrieve("http://image-net.org/api/text/imagenet.synset.geturls?wnid=" + classid, list_path)
-
-    downloads = []
-    with open(list_path, encoding="utf8") as fh:
-            downloads = fh.read().split('\n')
-            fh.close()
-
-    samples = 0
-    for i in range(len(downloads)):
-        try:
-            file = "{}/{}_{}.jpeg".format(class_path, iclass, i)
-            urlretrieve(downloads[i], file)
-            if os.stat(file).st_size < 10000:
-                os.remove(file)
-            else:
-                samples += 1
-        except BaseException as e:
-            #print("{} - {} - {}".format(iclass, downloads[i], e))
-            continue
-
-    print("\tCompleted Class {} - {} Samples Downloaded\n".format(iclass,samples))
 
 def split_dataset(dataset, batch_size, val_split=0.15, test_split=0.15):
     train_dataset = dataset

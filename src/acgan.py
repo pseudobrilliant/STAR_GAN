@@ -6,6 +6,7 @@ from torch.autograd import Variable
 from src.imagenet_model import ImageNetGenerator,ImageNetDiscriminator
 from src.cifar10_model import Cifar10Generator, Cifar10Discriminator
 from src.network import BaseNetwork
+import src.util as utils
 from PIL import Image
 import matplotlib
 import matplotlib.pyplot as plt
@@ -30,61 +31,92 @@ class ACGAN(BaseNetwork):
         if not os.path.exists("./saves"):
             os.makedirs("./saves")
 
-        self.LoadDataset()
+        self.LoadDatasets()
 
         self.LoadModels()
 
-        if self.train:
-            self.train, self.val, self.test = util.split_dataset(self.dataset, self.batch_size)
+        self.LoadTraining()
 
-            self.generator_optimizer = optim.Adam(self.generator.parameters(),
-                                                  lr=self.learning, betas=(0.5, 0.999))
-            self.discriminator_optimizer = optim.Adam(self.discriminator.parameters(),
-                                                      lr=self.learning, betas=(0.5, 0.999))
+    def LoadDatasets(self):
 
-            self.Train()
+        self.image_size = int(self.config["image_size"])
 
-    def LoadDataset(self):
+        self.dataset_types = self.config["dataset"].split(',')
 
-        image_size = int(self.config["image_size"])
+        self.datasets = []
 
-        self.dataset_type = self.config["dataset"]
+        self.total_num_classes = 0
 
-        download = not os.path.exists("./dataset")
+        temp_dataset = temp_classes = temp_num_classes = None
 
-        if self.dataset_type == "imagenet":
-            transform = transforms.Compose([
-                transforms.CenterCrop(image_size * 2),
-                transforms.Resize(image_size),
-                transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-            ])
+        for dataset in self.dataset_types:
+            if dataset == "imagenet":
+                if not os.path.exists("./imagenet"):
+                    utils.download_dataset("imagenet", "http://pseudobrilliant.com/files/imagenet.zip", "./")
 
-            self.dataset = data.ImageFolder(root='./dataset', transform=transform)
-            self.classes = self.dataset.classes
-            self.num_classes = len(self.dataset.classes)
+                transform = transforms.Compose([
+                    transforms.CenterCrop(self.image_size * 2),
+                    transforms.Resize(self.image_size),
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                ])
 
-        elif self.dataset_type == "cifar10":
-            transform = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-            ])
+                temp_dataset = data.ImageFolder(root='./imagenet', transform=transform)
+                temp_classes = temp_dataset.classes
+                temp_num_classes = len(temp_dataset.classes)
 
-            self.classes = ['plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
-            self.num_classes = 10
-            self.dataset = data.CIFAR10(root='./dataset', transform=transform, download=download)
-        else:
-            print("ERROR: Unsupported Dataset Type")
+            elif dataset == "cifar10":
+                download = not os.path.exists("./cifar10")
+
+                transform = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                ])
+
+                temp_classes = ['plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+                temp_num_classes = 10
+                temp_dataset = data.CIFAR10(root='./cifar10', transform=transform, download=download)
+
+            elif dataset == "wikiart":
+
+                if not os.path.exists("./wikiart"):
+                    utils.download_dataset("wikiart", "http://pseudobrilliant.com/files/wikiart.zip", "./")
+
+
+                transform = transforms.Compose([
+                    transforms.CenterCrop(self.image_size * 4),
+                    transforms.Resize(self.image_size),
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                ])
+
+                temp_dataset = data.ImageFolder(root='./wikiart', transform=transform)
+                temp_classes = temp_dataset.classes
+                temp_num_classes = len(temp_dataset.classes)
+            else:
+                print("ERROR: Unsupported Dataset Type")
+                exit(0)
+
+            training, val, test = util.split_dataset(temp_dataset, self.batch_size)
+
+            self.datasets.append({"type":dataset,"data":temp_dataset,"training":training, "val":val, "test":test,
+                                  "classes":temp_classes,"num_classes":temp_num_classes})
+
+            self.total_num_classes += temp_num_classes
+
+        self.num_datasets = len(self.datasets)
+
 
     def LoadModels(self):
 
-        if self.dataset_type == "imagenet":
-            self.generator = ImageNetGenerator(self.num_classes)
-            self.discriminator = ImageNetDiscriminator(self.num_classes)
+        self.dimensions = self.total_num_classes + self.num_datasets + 3;
 
-        elif self.dataset_type == "cifar10":
-            self.generator = Cifar10Generator(self.num_classes)
-            self.discriminator = Cifar10Discriminator(self.num_classes)
+        if self.image_size > 32:
+            self.generator = ImageNetGenerator(self.dimensions)
+            self.discriminator = ImageNetDiscriminator(self.dimensions)
+        else:
+            self.generator = Cifar10Generator(self.dimensions)
+            self.discriminator = Cifar10Discriminator(self.dimensions)
 
         if self.is_cuda:
             self.discriminator = self.discriminator.cuda()
@@ -99,59 +131,54 @@ class ACGAN(BaseNetwork):
         if "saved_discriminator" in self.config:
             self.discriminator = self.Load(self.config["saved_discriminator"], self.discriminator)
 
+    def LoadTraining(self):
+        if self.train:
+
+            self.generator_optimizer = optim.Adam(self.generator.parameters(),
+                                                  lr=self.learning, betas=(0.5, 0.999))
+            self.discriminator_optimizer = optim.Adam(self.discriminator.parameters(),
+                                                      lr=self.learning, betas=(0.5, 0.999))
+
+            self.critic_iterations = int(self.config['critic_iterations'])
+
+
+            self.discrimination_criterion = nn.BCELoss()
+            self.classification_criterion = nn.CrossEntropyLoss()
+
+            if self.is_cuda:
+                self.discrimination_criterion = self.discrimination_criterion.cuda()
+                self.classification_criterion = self.classification_criterion.cuda()
+
+            self.Train()
+
     def Train(self):
 
         historical_discriminator_error = []
         historical_generator_error = []
-        historical_val_dis_accuracy = []
-        historical_val_discriminator_error = []
-        historical_val_generator_error = []
 
         for epoch in range(self.epochs):
 
             if self.verbose:
                 print("Epoch {}:".format(epoch))
 
-            avg_discriminator_error = 0
-            avg_generator_error = 0
-            count = 0
+            discriminator_error = self.TrainDiscriminator()
+            generator_error = self.TrainGenerator()
 
-            for i, data in enumerate(self.train, 0):
-                real_variables = self.GetRealVariables(data)
-                fake_variables = self.GetFakeVariables(len(data[0]))
-
-                discriminator_error, generator_error = self.TrainSamples(real_variables, fake_variables)
-
-                avg_discriminator_error += discriminator_error
-                avg_generator_error += generator_error
-                count += 1
-
-            avg_discriminator_error /= count
-            avg_generator_error /= count
-            historical_discriminator_error.append(avg_discriminator_error)
-            historical_generator_error.append(avg_generator_error)
+            historical_discriminator_error.append(discriminator_error)
+            historical_generator_error.append(generator_error)
 
             if self.verbose:
-                print("\tAverage Discriminator Loss: {}".format(avg_discriminator_error))
-                print("\tAverage Generator Loss: {}".format(avg_generator_error))
-
-            val_dis_accuracy, val_discriminator_error, val_generator_error = self.Validate()
-            historical_val_dis_accuracy.append(val_dis_accuracy)
-            historical_val_discriminator_error.append(val_discriminator_error)
-            historical_val_generator_error.append(val_generator_error)
-
+                print("\tAverage Discriminator Loss: {}".format(discriminator_error))
+                print("\tAverage Generator Loss: {}".format(generator_error))
 
             if self.report_period and (epoch + 1) % self.report_period == 0:
-                self.StatusReport(epoch + 1, historical_discriminator_error, historical_generator_error,
-                                  historical_val_dis_accuracy, historical_val_discriminator_error,
-                                  historical_val_generator_error)
+                self.StatusReport(epoch + 1, historical_discriminator_error, historical_generator_error)
 
             if self.save_period and (epoch + 1) % self.save_period == 0:
                 self.SaveModels(temp_epoch=(epoch+1))
 
-    def GetRealVariables(self, data):
+    def GetRealVariables(self, batch, labels):
 
-        batch, labels = data
         mini_batchsize = len(batch)
 
         real_var = Variable(batch)
@@ -168,22 +195,50 @@ class ACGAN(BaseNetwork):
 
         return real_var, real_dis_var, real_class_var
 
-    def GetFakeVariables(self, mini_batchsize, target_class=None):
+    def GetFakeVariables(self, dataset_id, batch, target_class=None, full_labels =None):
 
-        fake_size = 100 + self.num_classes
-        fake_noise = np.random.normal(0, 1, (mini_batchsize, fake_size))
+        mini_batchsize = len(batch)
 
-        if target_class is None:
-            fake_labels = np.random.randint(0, self.num_classes, mini_batchsize)
+        mask_size = self.total_num_classes + self.num_datasets
+        fake_size = self.image_size + mask_size
+
+        mask = None
+
+        if full_labels is None:
+            for i in range(len(self.datasets)):
+
+                class_onehot = np.zeros((mini_batchsize, self.datasets[i]["num_classes"]))
+
+                if dataset_id == i and target_class is None:
+                    fake_labels = np.random.randint(0, self.datasets[i]["num_classes"], mini_batchsize)
+                    class_onehot[np.arange(mini_batchsize), fake_labels] = 1
+                elif dataset_id == i and target_class is not None:
+                    class_onehot[np.arange(mini_batchsize), target_class] = 1
+
+                if mask is None:
+                    mask = class_onehot
+                else:
+                    mask = np.concatenate((mask, class_onehot), axis=1)
         else:
-            fake_labels = np.full(mini_batchsize, target_class)
+            mask = np.zeros(mini_batchsize, mask_size)
+            mask = mask[np.arange(mini_batchsize)] = full_labels
 
-        class_onehot = np.zeros((mini_batchsize, self.num_classes))
-        class_onehot[np.arange(mini_batchsize), fake_labels] = 1
-        fake_noise[np.arange(mini_batchsize), :self.num_classes] = class_onehot[np.arange(mini_batchsize)]
-        fake_noise = torch.from_numpy(fake_noise).float().view(mini_batchsize, fake_size, 1, 1)
-        fake_noise = fake_noise.view(mini_batchsize, 110, 1, 1)
-        fake_noise_var = Variable(fake_noise)
+        fake_labels = mask.copy()
+        start = 0
+        for i in range(len(self.datasets)):
+            if dataset_id == i or (full_labels is not None and 1 in full_labels[start:start + self.datasets[i]["num_classes"]]):
+                flags = np.ones((mini_batchsize, 1))
+            else:
+                flags = np.zeros((mini_batchsize, 1))
+
+            mask = np.concatenate((mask, flags), axis=1)
+
+        mask_torch = torch.from_numpy(mask)
+        mask_torch = mask_torch.view(mask_torch.size(0),mask_torch.size(1),1,1)
+        mask_torch = mask_torch.repeat(1,1,batch.size(2), batch.size(3)).float()
+        labeled_batch = torch.cat([batch,mask_torch], dim=1)
+
+        labeled_batch_var = Variable(labeled_batch)
 
         fake_dis_val = torch.zeros(mini_batchsize)
         fake_dis_var = Variable(fake_dis_val)
@@ -192,126 +247,114 @@ class ACGAN(BaseNetwork):
         fake_class_var = Variable(fake_class_val)
 
         if self.is_cuda:
-            fake_noise_var = fake_noise_var.cuda()
+            labeled_batch_var = labeled_batch_var.cuda()
             fake_dis_var = fake_dis_var.cuda()
             fake_class_var = fake_class_var.cuda()
 
-        fake_var = self.generator(fake_noise_var)
+        fake_var = self.generator(labeled_batch_var)
 
         return fake_var, fake_dis_var, fake_class_var
 
-    def TrainSamples(self, real_variables, fake_variables):
+    def TrainDiscriminator(self):
 
-        self.discriminator.zero_grad()
+        total_discriminator_error_cpu = 0
 
-        discrimination_criterion = nn.BCELoss()
-        classification_criterion = nn.NLLLoss()
+        for i in range(self.critic_iterations):
+            dataset_class_start = 0
+            for i in range(len(self.datasets)):
 
-        (real_var, real_dis_var, real_class_var) = real_variables
-        (fake_var, fake_dis_var, fake_class_var) = fake_variables
+                self.discriminator.zero_grad()
 
-        real_dis_result, real_class_result = self.discriminator(real_var)
+                data = iter(self.datasets[i]["training"])
+                dataset_class_end = self.datasets[i]["num_classes"] + dataset_class_start
+                batch, label = data.next()
 
-        real_discrimination_error = discrimination_criterion(real_dis_result, real_dis_var)
-        real_classification_error = classification_criterion(real_class_result, real_class_var)
-        real_discriminator_error = real_discrimination_error + real_classification_error
-        real_discriminator_error.backward()
+                (real_var, real_dis_var, real_class_var) = self.GetRealVariables(batch, label)
+                (fake_var, fake_dis_var, fake_class_var) = self.GetFakeVariables(i, batch)
 
-        detach_fake = fake_var.clone().detach()
-        fake_dis_result, fake_class_result = self.discriminator(detach_fake)
+                real_dis_result, real_class_result = self.discriminator(real_var)
 
-        fake_discrimination_error = discrimination_criterion(fake_dis_result, fake_dis_var)
-        fake_classification_error = classification_criterion(fake_class_result, fake_class_var)
-        fake_discriminator_error = fake_discrimination_error + fake_classification_error
-        fake_discriminator_error.backward()
+                real_discrimination_error = - torch.mean(real_dis_result)
 
-        total_discriminator_error_cpu = (fake_discriminator_error + real_discriminator_error).data.cpu().numpy()[0]
+                real_class_result_split = real_class_result[:, dataset_class_start:dataset_class_end]
+                real_classification_error = self.classification_criterion(real_class_result_split, real_class_var)
 
-        self.discriminator_optimizer.step()
-        self.generator.zero_grad()
+                detach_fake = fake_var.clone().detach()
+                fake_dis_result, fake_class_result = self.discriminator(detach_fake)
 
-        fake_dis_result, fake_class_result = self.discriminator(fake_var)
+                fake_discrimination_error = torch.mean(fake_dis_result)
 
-        generator_discrimination_error = discrimination_criterion(fake_dis_result, real_dis_var)
-        generator_classification_error = classification_criterion(fake_class_result, fake_class_var)
-        total_generator_error = generator_discrimination_error + generator_classification_error
-        total_generator_error.backward()
+                # Compute loss for gradient penalty.
+                alpha = torch.rand(real_var.size(0), 1, 1, 1)
+                if self.is_cuda:
+                    alpha = alpha.cuda()
 
-        total_generator_error_cpu = total_generator_error.data.cpu().numpy()[0]
+                x_hat = Variable(alpha * real_var.data + (1 - alpha) * fake_var.data, requires_grad=True)
+                out_src, _ = self.discriminator(x_hat)
+                d_loss_gp = self.GradientPenalty(out_src, x_hat)
 
-        self.generator_optimizer.step()
+                loss = real_discrimination_error + fake_discrimination_error + \
+                       1 * real_classification_error + \
+                       10 * d_loss_gp
 
-        return total_discriminator_error_cpu, total_generator_error_cpu
+                loss.backward()
+                total_discriminator_error_cpu += loss.data.cpu().numpy()[0]
+                self.discriminator_optimizer.step()
 
-    def Validate(self):
+                dataset_class_start = dataset_class_end
 
-        avg_dis_accuracy = 0
-        avg_discriminator_error = 0
-        avg_generator_error = 0
-        count = 0
+        return total_discriminator_error_cpu / (self.critic_iterations * self.num_datasets)
 
-        for i, data in enumerate(self.val, 0):
-            real_variables = self.GetRealVariables(data)
-            fake_variables = self.GetFakeVariables(len(data[0]))
+    def TrainGenerator(self):
+        total_generator_error_cpu = 0
+        dataset_class_start = 0
+        for i in range(len(self.datasets)):
+            self.generator.zero_grad()
 
-            dis_accuracy, discriminator_error, generator_error = self.ValidateSamples(real_variables, fake_variables)
-            avg_dis_accuracy += dis_accuracy
-            avg_discriminator_error += discriminator_error
-            avg_generator_error += generator_error
-            count += 1
+            data = iter(self.datasets[i]["training"])
+            batch, labels = data.next()
 
-            del real_variables, fake_variables
-            torch.cuda.empty_cache()
+            dataset_class_end = dataset_class_start + self.datasets[i]["num_classes"]
 
-        avg_dis_accuracy /= count
-        avg_discriminator_error /= count
-        avg_generator_error /= count
+            (real_var, real_dis_var, real_class_var) = self.GetRealVariables(batch, labels)
+            (fake_var, fake_dis_var, fake_class_var) = self.GetFakeVariables(i, batch)
 
-        if self.verbose:
-            print("\tValidation Discriminator Accuracy: {}".format(avg_dis_accuracy))
-            print("\tValidation Discriminator Error: {}".format(avg_discriminator_error))
-            print("\tValidation Generator Error: {}".format(avg_generator_error))
+            fake_dis_result, fake_class_result = self.discriminator(fake_var)
 
-        return avg_dis_accuracy, avg_discriminator_error, avg_generator_error
+            generator_discrimination_error = - torch.mean(fake_dis_result)
 
-    def ValidateSamples(self, real_variables, fake_variables):
+            fake_class_result_split = fake_class_result[:, dataset_class_start:dataset_class_end]
+            generator_classification_error = self.classification_criterion(fake_class_result_split, real_class_var)
 
-        discrimination_criterion = nn.BCELoss()
-        classification_criterion = nn.NLLLoss()
+            (recnst_var, recnst_dis_var, recnst_class_var) = self.GetFakeVariables(i, batch, labels)
 
-        (real_var, real_dis_var, real_class_var) = real_variables
-        (fake_var, fake_dis_var, fake_class_var) = fake_variables
+            reconstruct_loss = torch.mean(torch.abs(real_var - recnst_var))
 
-        real_dis_result, real_class_result = self.discriminator(real_var)
+            loss = generator_discrimination_error + 10 * reconstruct_loss + 1 * generator_classification_error
+            total_generator_error_cpu += loss.data.cpu().numpy()[0]
+            loss.backward()
+            self.generator_optimizer.step()
 
-        real_dis_accurate, real_dis_accurate_perc = self.GetDiscriminationAccuracy(real_dis_result, real_dis_var)
-        real_discrimination_error = discrimination_criterion(real_dis_result, real_dis_var)
-        real_classification_error = classification_criterion(real_class_result, real_class_var)
-        real_discriminator_error = real_discrimination_error + real_classification_error
+        return total_generator_error_cpu /self.num_datasets
 
-        fake_dis_result, fake_class_result = self.discriminator(fake_var.detach())
+    def GradientPenalty(self, y, x):
+        """Compute gradient penalty: (L2_norm(dy/dx) - 1)**2."""
+        weight = torch.ones(y.size())
 
-        fake_dis_accurate, fake_dis_accurate_perc = self.GetDiscriminationAccuracy(fake_dis_result, fake_dis_var)
-        fake_discrimination_error = discrimination_criterion(fake_dis_result, fake_dis_var)
-        fake_classification_error = classification_criterion(fake_class_result, fake_class_var)
-        fake_discriminator_error = fake_discrimination_error + fake_classification_error
+        if self.is_cuda:
+            weight = weight.cuda()
 
-        dis_accuracy = (real_dis_accurate + fake_dis_accurate) / (len(real_var.data) * 2) * 100
+        dydx = torch.autograd.grad(outputs=y,
+                                   inputs=x,
+                                   grad_outputs=weight,
+                                   retain_graph=True,
+                                   create_graph=True,
+                                   only_inputs=True)[0]
 
-        total_discriminator_error_cpu = (fake_discriminator_error + real_discriminator_error).data.cpu().numpy()[0]
+        dydx = dydx.view(dydx.size(0), -1)
+        dydx_l2norm = torch.sqrt(torch.sum(dydx ** 2, dim=1))
 
-        generator_discrimination_error = discrimination_criterion(fake_dis_result, real_dis_var)
-        generator_classification_error = classification_criterion(fake_class_result, fake_class_var)
-        total_generator_error = generator_discrimination_error + generator_classification_error
-
-        total_generator_error_cpu = total_generator_error.data.cpu().numpy()[0]
-
-        del discrimination_criterion, classification_criterion, \
-            real_discriminator_error, real_classification_error, real_discrimination_error, \
-            fake_discriminator_error, fake_classification_error, fake_discrimination_error
-        torch.cuda.empty_cache()
-
-        return dis_accuracy, total_discriminator_error_cpu, total_generator_error_cpu
+        return torch.mean((dydx_l2norm - 1) ** 2)
 
     def GetDiscriminationAccuracy(self, source, target):
         source_cpu = source.data.cpu().numpy()
@@ -324,58 +367,27 @@ class ACGAN(BaseNetwork):
         percent_correct = (num_correct / len(source_cpu)) * 100
         return num_correct, percent_correct
 
-    def StatusReport(self, epoch, historical_discriminator_error, historical_generator_error,
-                     historical_val_dis_accuracy, historical_val_discriminator_error,
-                     historical_val_generator_error):
+    def StatusReport(self, epoch, historical_discriminator_error, historical_generator_error):
 
         x = [i for i in range(1, epoch + 1)]
         plt.title("Epoch vs Average Loss")
         plt.xlabel("Epoch")
         plt.ylabel("Average Loss")
         plt.plot(x, historical_discriminator_error, marker='o', label='discriminator loss')
-        plt.plot(x, historical_val_generator_error, marker='o', label='generator loss')
+        plt.plot(x, historical_generator_error, marker='o', label='generator loss')
         plt.legend(loc='best')
         plt.savefig('./saves/epoch_{}_loss.png'.format(epoch))
-
-        plt.close()
-
-        plt.title("Epoch vs Discriminator Average Accuracy")
-        plt.xlabel("Epoch")
-        plt.ylabel("Average Accuracy")
-        plt.plot(x, historical_val_dis_accuracy, marker='o')
-        plt.savefig('./saves/epoch_{}_accuracy.png'.format(epoch))
 
         plt.close()
 
         self.GenerateSampleImages("./saves/training_samples_{}_epochs".format(epoch))
 
     def GenerateSampleImages(self, path='./saves/img.png'):
-        plt.ioff()
-        fig, ax = plt.subplots(int(self.num_classes / 5), 5, figsize=(32, 32))
-        fig.set_size_inches(6,3)
-
-        for i in range(self.num_classes):
-            fake_var, fake_dis_var, fake_class_var = self.GetFakeVariables(32, target_class=i)
-            fake_var_cpu = fake_var.data[0]
-
-            grid = vutils.make_grid(tensor=fake_var_cpu)
-            ndarr = grid.mul(255).clamp(0, 255).byte().permute(1, 2, 0).cpu().numpy()
-            image = Image.fromarray(ndarr)
-            row = int(i/5)
-            col = int(i%5)
-            ax[row, col].cla()
-            ax[row, col].imshow(image, interpolation='none')
-            ax[row, col].get_xaxis().set_visible(False)
-            ax[row, col].get_yaxis().set_visible(False)
-            ax[row, col].set_title(self.classes[i], fontsize=15)
-            vutils.save_image(fake_var.data.cpu(), "./saves/{}.png".format(self.classes[i]))
-
-        plt.tight_layout()
-        plt.savefig(path+".png", bbox_inches='tight', dpi=100)
-        plt.close()
-
-        fake_var, fake_dis_var, fake_class_var = self.GetFakeVariables(self.batch_size)
-        vutils.save_image(fake_var.data.cpu(), path+"_current_samples.png")
+        for i in range(self.num_datasets):
+            data = iter(self.datasets[i]["test"])
+            batch,labels = data.next()
+            fake_var, fake_dis_var, fake_class_var = self.GetFakeVariables(i, batch)
+            vutils.save_image(fake_var.data.cpu(), "{}_current_samples_dataset_{}.png".format(path, self.datasets[i]["type"]))
 
     def SaveModels(self, temp_epoch=None):
 
