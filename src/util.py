@@ -34,7 +34,7 @@ def download_dataset(dataset,url,path):
 
     os.mkdir(path)
 
-    zip_path = "{}/{}.zip".format(path, dataset)
+    zip_path = "{}/{}.zip".format("./", dataset)
     download_url(url, zip_path)
 
     zip_ref = zipfile.ZipFile(zip_path, 'r')

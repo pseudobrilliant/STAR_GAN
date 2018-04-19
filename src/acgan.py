@@ -52,7 +52,7 @@ class ACGAN(BaseNetwork):
         for dataset in self.dataset_types:
             if dataset == "imagenet":
                 if not os.path.exists("./imagenet"):
-                    utils.download_dataset("imagenet", "http://pseudobrilliant.com/files/imagenet.zip", "./")
+                    utils.download_dataset("imagenet", "http://pseudobrilliant.com/files/imagenet.zip", "./imagenet")
 
                 transform = transforms.Compose([
                     transforms.CenterCrop(self.image_size * 2),
@@ -80,7 +80,7 @@ class ACGAN(BaseNetwork):
             elif dataset == "wikiart":
 
                 if not os.path.exists("./wikiart"):
-                    utils.download_dataset("wikiart", "http://pseudobrilliant.com/files/wikiart.zip", "./")
+                    utils.download_dataset("wikiart", "http://pseudobrilliant.com/files/wikiart.zip", "./wikiart")
 
 
                 transform = transforms.Compose([
@@ -234,8 +234,10 @@ class ACGAN(BaseNetwork):
             mask = np.concatenate((mask, flags), axis=1)
             start = self.datasets[i]["num_classes"]
 
+        #Turns the one hot vector into channels. If the 0 onehot class was 1 then the entire 4th channel will be ones.
+        #This creates an image of batch_size * 3 + num_classes * w *h
         mask_torch = torch.from_numpy(mask)
-        mask_torch = mask_torch.view(mask_torch.size(0),mask_torch.size(1),1,1)
+        mask_torch = mask_torch.view(mask_torch.size(0),mask_torch.size(1), 1, 1)
         mask_torch = mask_torch.repeat(1,1,batch.size(2), batch.size(3)).float()
         labeled_batch = torch.cat([batch,mask_torch], dim=1)
 
@@ -290,6 +292,7 @@ class ACGAN(BaseNetwork):
                 if self.is_cuda:
                     alpha = alpha.cuda()
 
+                # Gradient Penalty https://github.com/yunjey/StarGAN
                 x_hat = Variable(alpha * real_var.data + (1 - alpha) * fake_var.data, requires_grad=True)
                 out_src, _ = self.discriminator(x_hat)
                 d_loss_gp = self.GradientPenalty(out_src, x_hat)
@@ -338,6 +341,7 @@ class ACGAN(BaseNetwork):
 
         return total_generator_error_cpu /self.num_datasets
 
+    # Gradient Penalty by STARGan implementation https://github.com/yunjey/StarGAN
     def GradientPenalty(self, y, x):
         """Compute gradient penalty: (L2_norm(dy/dx) - 1)**2."""
         weight = torch.ones(y.size())
@@ -383,6 +387,7 @@ class ACGAN(BaseNetwork):
 
         self.GenerateSampleImages("./saves/training_samples_{}_epochs".format(epoch))
 
+    # Visuzlization method https://github.com/yunjey/StarGAN
     def GenerateSampleImages(self, path='./saves/img.png'):
         data = iter(self.datasets[0]["test"])
         batch, labels = data.next()
