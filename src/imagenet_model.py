@@ -1,6 +1,9 @@
 import src.network as network
 import torch.nn as nn
 
+
+#Model architecture inspired by STARGan implementation https://github.com/yunjey/StarGAN
+
 class ImageNetDiscriminator(nn.Module):
 
     def __init__(self, dimensions, image_size=128):
@@ -50,6 +53,8 @@ class ImageNetDiscriminator(nn.Module):
 
         return discrimination, classifications
 
+
+#Model architecture inspired by STARGan implementation https://github.com/yunjey/StarGAN
 
 class ImageNetGenerator(nn.Module):
 
