@@ -212,8 +212,11 @@ class ACGAN(BaseNetwork):
                 if dataset_id == i and target_class is None:
                     fake_labels = np.random.randint(0, self.datasets[i]["num_classes"], mini_batchsize)
                     class_onehot[np.arange(mini_batchsize), fake_labels] = 1
+                    fake_labels_val = torch.from_numpy(fake_labels)
                 elif dataset_id == i and target_class is not None:
+                    fake_labels = target_class
                     class_onehot[np.arange(mini_batchsize), target_class] = 1
+                    fake_labels_val = fake_labels
 
                 if mask is None:
                     mask = class_onehot
@@ -223,7 +226,6 @@ class ACGAN(BaseNetwork):
             mask = np.zeros(mini_batchsize, mask_size)
             mask = mask[np.arange(mini_batchsize)] = full_labels
 
-        fake_labels = mask.copy()
         start = 0
         for i in range(len(self.datasets)):
             if dataset_id == i or (full_labels is not None and 1 in full_labels[start:start + self.datasets[i]["num_classes"]]):
@@ -246,7 +248,7 @@ class ACGAN(BaseNetwork):
         fake_dis_val = torch.zeros(mini_batchsize)
         fake_dis_var = Variable(fake_dis_val)
 
-        fake_class_val = torch.from_numpy(fake_labels).long()
+        fake_class_val = fake_labels_val.long()
         fake_class_var = Variable(fake_class_val)
 
         if self.is_cuda:
@@ -328,7 +330,7 @@ class ACGAN(BaseNetwork):
             generator_discrimination_error = - torch.mean(fake_dis_result)
 
             fake_class_result_split = fake_class_result[:, dataset_class_start:dataset_class_end]
-            generator_classification_error = self.classification_criterion(fake_class_result_split, real_class_var)
+            generator_classification_error = self.classification_criterion(fake_class_result_split, fake_class_var)
 
             (recnst_var, recnst_dis_var, recnst_class_var) = self.GetFakeVariables(i, batch, labels)
 
@@ -394,11 +396,11 @@ class ACGAN(BaseNetwork):
 
         fake = [batch]
         for i in range(self.datasets[0]["num_classes"]):
-            trg = np.repeat(i, len(batch))
+            trg = torch.from_numpy(np.repeat(i, len(batch)))
             fake_var, fake_dis_var, fake_class_var = self.GetFakeVariables(0, batch, trg)
             fake.append(fake_var.data.cpu())
         for i in range(self.datasets[1]["num_classes"]):
-            trg = np.repeat(i, len(batch))
+            trg = torch.from_numpy(np.repeat(i, len(batch)))
             fake_var, fake_dis_var, fake_class_var = self.GetFakeVariables(1, batch, trg)
             fake.append(fake_var.data.cpu())
 
