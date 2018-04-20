@@ -4,4 +4,4 @@ To run the code please activate the pyenv venv (GANEnv on windows) created by th
 
 Please be aware that running this code will download a large number of files for training. This will take some time.
 
-![Alt text](https://github.com/ucfblythe/STAR_GAN/blob/master/images/samples.png)
+![Screenshot](images/samples.png)
