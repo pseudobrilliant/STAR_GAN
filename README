@@ -3,4 +3,4 @@ The included code contains a python implamantion of STARGAN Based off a previous
 To run the code please activate the pyenv venv (GANEnv on windows) created by the setup script source ./venv/bin/activate python main.py
 
 Please be aware that running this code will download a large number of files for training. This will take some time.
-#+html: <p align="center"><img src="https://github.com/ucfblythe/STAR_GAN/blob/master/images/samples.png" /></p>
+![Alt text](/images/samples.png "Sample")
