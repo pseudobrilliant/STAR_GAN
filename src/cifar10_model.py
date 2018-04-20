@@ -1,5 +1,7 @@
 import src.network as network
 import torch.nn as nn
+#Model architecture inspired by STARGan implementation https://github.com/yunjey/StarGAN
+
 
 class Cifar10Discriminator(nn.Module):
 
@@ -51,6 +53,9 @@ class Cifar10Discriminator(nn.Module):
 
         return discrimination, classifications
 
+
+
+#Model architecture inspired by STARGan implementation https://github.com/yunjey/StarGAN
 
 class Cifar10Generator(nn.Module):
 
