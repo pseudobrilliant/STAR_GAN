@@ -403,7 +403,10 @@ class ACGAN(BaseNetwork):
             fake.append(fake_var.data.cpu())
 
         image = torch.cat(fake, dim=3)
-        vutils.save_image(image, "{}_current_samples_{}_fake.png".format(path, self.datasets[0]["type"]))
+        out = (image + 1) / 2
+        out.clamp_(0, 1)
+
+        vutils.save_image(out, "{}_current_samples_{}_fake.png".format(path, self.datasets[0]["type"]),nrow=1)
 
 
     def SaveModels(self, temp_epoch=None):
