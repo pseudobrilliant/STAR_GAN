@@ -113,10 +113,10 @@ class ACGAN(BaseNetwork):
 
         if self.image_size > 32:
             self.generator = ImageNetGenerator(self.dimensions)
-            self.discriminator = ImageNetDiscriminator(self.dimensions)
+            self.discriminator = ImageNetDiscriminator(self.total_num_classes)
         else:
             self.generator = Cifar10Generator(self.dimensions)
-            self.discriminator = Cifar10Discriminator(self.dimensions)
+            self.discriminator = Cifar10Discriminator(self.total_num_classes)
 
         if self.is_cuda:
             self.discriminator = self.discriminator.cuda()
