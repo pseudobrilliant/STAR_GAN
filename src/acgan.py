@@ -384,11 +384,22 @@ class ACGAN(BaseNetwork):
         self.GenerateSampleImages("./saves/training_samples_{}_epochs".format(epoch))
 
     def GenerateSampleImages(self, path='./saves/img.png'):
-        for i in range(self.num_datasets):
-            data = iter(self.datasets[i]["test"])
-            batch,labels = data.next()
-            fake_var, fake_dis_var, fake_class_var = self.GetFakeVariables(i, batch)
-            vutils.save_image(fake_var.data.cpu(), "{}_current_samples_dataset_{}.png".format(path, self.datasets[i]["type"]))
+        data = iter(self.datasets[0]["test"])
+        batch, labels = data.next()
+
+        fake = [batch]
+        for i in range(self.datasets[0]["num_classes"]):
+            trg = np.repeat(i, len(batch))
+            fake_var, fake_dis_var, fake_class_var = self.GetFakeVariables(0, batch, trg)
+            fake.append(fake_var.data.cpu())
+        for i in range(self.datasets[1]["num_classes"]):
+            trg = np.repeat(i, len(batch))
+            fake_var, fake_dis_var, fake_class_var = self.GetFakeVariables(1, batch, trg)
+            fake.append(fake_var.data.cpu())
+
+        image = torch.cat(fake, dim=3)
+        vutils.save_image(image, "{}_current_samples_{}_fake.png".format(path, self.datasets[0]["type"]))
+
 
     def SaveModels(self, temp_epoch=None):
 
