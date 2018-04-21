@@ -155,6 +155,9 @@ class ACGAN(BaseNetwork):
 
         historical_discriminator_error = []
         historical_generator_error = []
+        historical_discriminator_real = []
+        historical_discriminator_fake = []
+        historical_discriminator_accuracy = []
 
         for epoch in range(self.epochs):
 
@@ -172,7 +175,15 @@ class ACGAN(BaseNetwork):
                 print("\tAverage Generator Loss: {}".format(generator_error))
 
             if self.report_period and (epoch + 1) % self.report_period == 0:
-                self.StatusReport(epoch + 1, historical_discriminator_error, historical_generator_error)
+                real_acc, fake_acc, total_acc = self.Validation()
+                historical_discriminator_real.append(real_acc)
+                historical_discriminator_fake.append(fake_acc)
+                historical_discriminator_accuracy.append(total_acc)
+                self.StatusReport(epoch + 1, historical_discriminator_error,
+                                  historical_generator_error,
+                                  historical_discriminator_real,
+                                  historical_discriminator_fake,
+                                  historical_discriminator_accuracy)
 
             if self.save_period and (epoch + 1) % self.save_period == 0:
                 self.SaveModels(temp_epoch=(epoch+1))
@@ -338,10 +349,13 @@ class ACGAN(BaseNetwork):
 
             loss = generator_discrimination_error + 10 * reconstruct_loss + 1 * generator_classification_error
             total_generator_error_cpu += loss.data.cpu().numpy()[0]
+
             loss.backward()
             self.generator_optimizer.step()
 
-        return total_generator_error_cpu /self.num_datasets
+            dataset_class_start = dataset_class_end
+
+        return total_generator_error_cpu / self.num_datasets
 
     # Gradient Penalty by STARGan implementation https://github.com/yunjey/StarGAN
     def GradientPenalty(self, y, x):
@@ -363,27 +377,76 @@ class ACGAN(BaseNetwork):
 
         return torch.mean((dydx_l2norm - 1) ** 2)
 
-    def GetDiscriminationAccuracy(self, source, target):
+    def Validation(self):
+
+        real_right = 0
+        fake_right = 0
+        total_count = 0
+        dataset_class_start = 0
+
+        for i in range(self.num_datasets):
+            dataset = self.datasets[i]["val"]
+
+            for batch,labels in dataset:
+
+                dataset_class_end = dataset_class_start + self.datasets[i]["num_classes"]
+
+                (real_var, real_dis_var, real_class_var) = self.GetRealVariables(batch, labels)
+                (fake_var, fake_dis_var, fake_class_var) = self.GetFakeVariables(i, batch, labels)
+
+                real_dis_result, real_class_result = self.discriminator(real_var)
+                real_class_result_split = real_class_result[:, dataset_class_start:dataset_class_end]
+                real_right += self.GetAccuracy(real_class_result_split, real_class_var)
+
+                fake_dis_result, fake_class_result = self.discriminator(fake_var)
+                fake_class_result_split = fake_class_result[:, dataset_class_start:dataset_class_end]
+                fake_right += self.GetAccuracy(fake_class_result_split, fake_class_var)
+
+                total_count += len(batch)
+
+            dataset_class_start = dataset_class_end
+
+        return (real_right/(total_count*2)) * 100.0,\
+               (fake_right/(total_count*2)) * 100.0,\
+               ((real_right + fake_right) / (total_count*4)) * 100.0
+
+    def GetAccuracy(self,source, target):
+
         source_cpu = source.data.cpu().numpy()
         target_cpu = target.data.cpu().numpy()
         num_correct = 0
         for i in range(len(source_cpu)):
-            if source_cpu[i] > 0.85 and target_cpu[i] == 1:
+            if np.argmax(source_cpu[i]) == target_cpu[i]:
                 num_correct += 1
 
-        percent_correct = (num_correct / len(source_cpu)) * 100
-        return num_correct, percent_correct
+        return num_correct
 
-    def StatusReport(self, epoch, historical_discriminator_error, historical_generator_error):
+    def StatusReport(self, epoch, historical_discriminator_error,
+                                  historical_generator_error,
+                                  historical_discriminator_real,
+                                  historical_discriminator_fake,
+                                  historical_discriminator_accuracy):
 
         x = [i for i in range(1, epoch + 1)]
-        plt.title("Epoch vs Average Loss")
-        plt.xlabel("Epoch")
+        plt.title("Iteration vs Average Loss")
+        plt.xlabel("Iteration")
         plt.ylabel("Average Loss")
         plt.plot(x, historical_discriminator_error, marker='o', label='discriminator loss')
         plt.plot(x, historical_generator_error, marker='o', label='generator loss')
         plt.legend(loc='best')
         plt.savefig('./saves/epoch_{}_loss.png'.format(epoch))
+
+        plt.close()
+
+        x = [i for i in range(0, len(historical_discriminator_accuracy))]
+        plt.title("Iteration vs Accuracy")
+        plt.xlabel("Iteration")
+        plt.ylabel("Average Accuracy")
+        plt.plot(x, historical_discriminator_real, marker='o', label='discriminator real')
+        plt.plot(x, historical_discriminator_fake, marker='o', label='discriminator fake')
+        plt.plot(x, historical_discriminator_accuracy, marker='o', label='discriminator total')
+        plt.legend(loc='best')
+        plt.savefig('./saves/epoch_{}_accuracy.png'.format(epoch))
 
         plt.close()
 
