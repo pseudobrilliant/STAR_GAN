@@ -497,7 +497,7 @@ class ACGAN(BaseNetwork):
         plt.title("Iteration vs Discriminator Loss")
         plt.xlabel("Iteration")
         plt.ylabel("Average Discriminator Loss")
-        plt.plot(x, historical_discriminator_real, marker='o', label='discriminator loss')
+        plt.plot(x, historical_discriminator_real, marker='o', label='discrimination only loss')
         plt.legend(loc='best')
         plt.savefig('./saves/epoch_{}_disc_loss.png'.format(epoch))
 
