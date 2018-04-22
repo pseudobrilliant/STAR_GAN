@@ -469,7 +469,7 @@ class ACGAN(BaseNetwork):
                      historical_discriminator_accuracy,
                      historical_discrimination_loss):
 
-        x = [(i + 1) * 100 for i in range(1, epoch + 1)]
+        x = [(i + 1) * 100 for i in range(0, int((epoch+1) / self.report_period))]
         plt.title("Iteration vs Average Loss")
         plt.xlabel("Iteration")
         plt.ylabel("Average Loss")
@@ -480,7 +480,6 @@ class ACGAN(BaseNetwork):
 
         plt.close()
 
-        x = [(i + 1) * 100 for i in range(0, len(historical_discriminator_accuracy))]
         plt.title("Iteration vs Accuracy")
         plt.xlabel("Iteration")
         plt.ylabel("Average Accuracy")
@@ -492,8 +491,6 @@ class ACGAN(BaseNetwork):
 
         plt.close()
 
-
-        x = [(i + 1) * 100 for i in range(0, len(historical_discriminator_accuracy))]
         plt.title("Iteration vs Discriminator Loss")
         plt.xlabel("Iteration")
         plt.ylabel("Average Discriminator Loss")
