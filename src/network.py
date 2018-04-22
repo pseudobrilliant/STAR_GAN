@@ -19,6 +19,10 @@ class BaseNetwork:
             self.report_period = int(config["report_period"])
             self.save_period = int(config["save_period"])
 
+            self.early_training = None
+            if "early_training" in config:
+                self.early_training = int(config["early_training"])
+
     def weights_init(m):
         classname = m.__class__.__name__
         if classname.find('Conv') != -1:

@@ -3,7 +3,7 @@ import torchvision.datasets as data
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
 from torch.autograd import Variable
-from src.imagenet_model import ImageNetGenerator,ImageNetDiscriminator
+from src.imagenet_model import ImageNetGenerator, ImageNetDiscriminator
 from src.cifar10_model import Cifar10Generator, Cifar10Discriminator
 from src.network import BaseNetwork
 import src.util as utils
@@ -19,8 +19,9 @@ import warnings
 from torch import load, save
 import random
 
-#Parts of this implementation were inspired by gitlimlabs ACGAN implimentation https://github.com/gitlimlab/ACGAN-PyTorch.
-#Primarily the model structures, and the implementation of both Imagenet and CIFAR10 models
+
+# Parts of this implementation were inspired by gitlimlabs ACGAN implimentation https://github.com/gitlimlab/ACGAN-PyTorch.
+# Primarily the model structures, and the implementation of both Imagenet and CIFAR10 models
 
 class ACGAN(BaseNetwork):
 
@@ -82,7 +83,6 @@ class ACGAN(BaseNetwork):
                 if not os.path.exists("./wikiart"):
                     utils.download_dataset("wikiart", "http://pseudobrilliant.com/files/wikiart.zip", "./wikiart")
 
-
                 transform = transforms.Compose([
                     transforms.CenterCrop(self.image_size * 4),
                     transforms.Resize(self.image_size),
@@ -97,15 +97,14 @@ class ACGAN(BaseNetwork):
                 print("ERROR: Unsupported Dataset Type")
                 exit(0)
 
-            training, val, test = util.split_dataset(temp_dataset, self.batch_size)
+            training, val, test = util.split_dataset(temp_dataset, self.batch_size, val_split=0.10,test_split=0.5)
 
-            self.datasets.append({"type":dataset,"data":temp_dataset,"training":training, "val":val, "test":test,
-                                  "classes":temp_classes,"num_classes":temp_num_classes})
+            self.datasets.append({"type": dataset, "data": temp_dataset, "training": training, "val": val, "test": test,
+                                  "classes": temp_classes, "num_classes": temp_num_classes})
 
             self.total_num_classes += temp_num_classes
 
         self.num_datasets = len(self.datasets)
-
 
     def LoadModels(self):
 
@@ -141,7 +140,6 @@ class ACGAN(BaseNetwork):
 
             self.critic_iterations = int(self.config['critic_iterations'])
 
-
             self.discrimination_criterion = nn.BCELoss()
             self.classification_criterion = nn.CrossEntropyLoss()
 
@@ -158,6 +156,12 @@ class ACGAN(BaseNetwork):
         historical_discriminator_real = []
         historical_discriminator_fake = []
         historical_discriminator_accuracy = []
+        historical_discrimination_loss = []
+        total_discriminator_error=0
+        total_generator_error = 0
+
+        if self.early_training is not None:
+            self.EarlyTraining()
 
         for epoch in range(self.epochs):
 
@@ -166,27 +170,30 @@ class ACGAN(BaseNetwork):
 
             discriminator_error = self.TrainDiscriminator()
             generator_error = self.TrainGenerator()
-
-            historical_discriminator_error.append(discriminator_error)
-            historical_generator_error.append(generator_error)
+            total_discriminator_error += discriminator_error
+            total_generator_error += generator_error
 
             if self.verbose:
                 print("\tAverage Discriminator Loss: {}".format(discriminator_error))
                 print("\tAverage Generator Loss: {}".format(generator_error))
 
             if self.report_period and (epoch + 1) % self.report_period == 0:
-                real_acc, fake_acc, total_acc = self.Validation()
+                historical_discriminator_error.append(total_discriminator_error / ((epoch+1) /self.report_period))
+                historical_generator_error.append(total_generator_error / ((epoch+1) /self.report_period))
+                real_acc, fake_acc, total_acc, disc_loss = self.Validation()
                 historical_discriminator_real.append(real_acc)
                 historical_discriminator_fake.append(fake_acc)
                 historical_discriminator_accuracy.append(total_acc)
+                historical_discrimination_loss.append(disc_loss)
                 self.StatusReport(epoch + 1, historical_discriminator_error,
                                   historical_generator_error,
                                   historical_discriminator_real,
                                   historical_discriminator_fake,
-                                  historical_discriminator_accuracy)
+                                  historical_discriminator_accuracy,
+                                  historical_discrimination_loss)
 
             if self.save_period and (epoch + 1) % self.save_period == 0:
-                self.SaveModels(temp_epoch=(epoch+1))
+                self.SaveModels(temp_epoch=(epoch + 1))
 
     def GetRealVariables(self, batch, labels):
 
@@ -206,7 +213,7 @@ class ACGAN(BaseNetwork):
 
         return real_var, real_dis_var, real_class_var
 
-    def GetFakeVariables(self, dataset_id, batch, target_class=None, full_labels =None):
+    def GetFakeVariables(self, dataset_id, batch, target_class=None, full_labels=None):
 
         mini_batchsize = len(batch)
 
@@ -239,7 +246,8 @@ class ACGAN(BaseNetwork):
 
         start = 0
         for i in range(len(self.datasets)):
-            if dataset_id == i or (full_labels is not None and 1 in full_labels[start:start + self.datasets[i]["num_classes"]]):
+            if dataset_id == i or (
+                    full_labels is not None and 1 in full_labels[start:start + self.datasets[i]["num_classes"]]):
                 flags = np.ones((mini_batchsize, 1))
             else:
                 flags = np.zeros((mini_batchsize, 1))
@@ -247,12 +255,12 @@ class ACGAN(BaseNetwork):
             mask = np.concatenate((mask, flags), axis=1)
             start = self.datasets[i]["num_classes"]
 
-        #Turns the one hot vector into channels. If the 0 onehot class was 1 then the entire 4th channel will be ones.
-        #This creates an image of batch_size * 3 + num_classes * w *h
+        # Turns the one hot vector into channels. If the 0 onehot class was 1 then the entire 4th channel will be ones.
+        # This creates an image of batch_size * 3 + num_classes * w *h
         mask_torch = torch.from_numpy(mask)
-        mask_torch = mask_torch.view(mask_torch.size(0),mask_torch.size(1), 1, 1)
-        mask_torch = mask_torch.repeat(1,1,batch.size(2), batch.size(3)).float()
-        labeled_batch = torch.cat([batch,mask_torch], dim=1)
+        mask_torch = mask_torch.view(mask_torch.size(0), mask_torch.size(1), 1, 1)
+        mask_torch = mask_torch.repeat(1, 1, batch.size(2), batch.size(3)).float()
+        labeled_batch = torch.cat([batch, mask_torch], dim=1)
 
         labeled_batch_var = Variable(labeled_batch)
 
@@ -270,6 +278,32 @@ class ACGAN(BaseNetwork):
         fake_var = self.generator(labeled_batch_var)
 
         return fake_var, fake_dis_var, fake_class_var
+
+    def EarlyTraining(self):
+
+        print("Running Pretraining")
+
+        dataset_class_start = 0
+        for i in range(self.num_datasets):
+            for j in range(self.early_training):
+                self.discriminator_optimizer.zero_grad()
+
+                data = iter(self.datasets[i]["training"])
+                dataset_class_end = self.datasets[i]["num_classes"] + dataset_class_start
+                batch, label = data.next()
+
+                (real_var, real_dis_var, real_class_var) = self.GetRealVariables(batch, label)
+
+                real_dis_result, real_class_result = self.discriminator(real_var)
+
+                real_class_result_split = real_class_result[:, dataset_class_start:dataset_class_end]
+                real_classification_error = self.classification_criterion(real_class_result_split, real_class_var)
+
+                real_classification_error.backward()
+
+                self.discriminator_optimizer.step()
+
+            dataset_class_start = dataset_class_end
 
     def TrainDiscriminator(self):
 
@@ -343,7 +377,9 @@ class ACGAN(BaseNetwork):
             fake_class_result_split = fake_class_result[:, dataset_class_start:dataset_class_end]
             generator_classification_error = self.classification_criterion(fake_class_result_split, fake_class_var)
 
-            (recnst_var, recnst_dis_var, recnst_class_var) = self.GetFakeVariables(i, batch, labels)
+            fake_tensor = fake_var.data.cpu()
+
+            (recnst_var, recnst_dis_var, recnst_class_var) = self.GetFakeVariables(i, fake_tensor, labels)
 
             reconstruct_loss = torch.mean(torch.abs(real_var - recnst_var))
 
@@ -383,12 +419,12 @@ class ACGAN(BaseNetwork):
         fake_right = 0
         total_count = 0
         dataset_class_start = 0
+        generator_discrimination_error = 0
 
         for i in range(self.num_datasets):
             dataset = self.datasets[i]["val"]
 
-            for batch,labels in dataset:
-
+            for batch, labels in dataset:
                 dataset_class_end = dataset_class_start + self.datasets[i]["num_classes"]
 
                 (real_var, real_dis_var, real_class_var) = self.GetRealVariables(batch, labels)
@@ -398,19 +434,24 @@ class ACGAN(BaseNetwork):
                 real_class_result_split = real_class_result[:, dataset_class_start:dataset_class_end]
                 real_right += self.GetAccuracy(real_class_result_split, real_class_var)
 
+                generator_discrimination_error += - torch.mean(real_dis_result).data.cpu().numpy()[0]
+
                 fake_dis_result, fake_class_result = self.discriminator(fake_var)
                 fake_class_result_split = fake_class_result[:, dataset_class_start:dataset_class_end]
                 fake_right += self.GetAccuracy(fake_class_result_split, fake_class_var)
+
+                generator_discrimination_error += - torch.mean(fake_dis_result).data.cpu().numpy()[0]
 
                 total_count += len(batch)
 
             dataset_class_start = dataset_class_end
 
-        return (real_right/(total_count*2)) * 100.0,\
-               (fake_right/(total_count*2)) * 100.0,\
-               ((real_right + fake_right) / (total_count*4)) * 100.0
+        return (real_right / (total_count * 2)) * 100.0, \
+               (fake_right / (total_count * 2)) * 100.0, \
+               ((real_right + fake_right) / (total_count * 4)) * 100.0, \
+               generator_discrimination_error / (total_count * 4)
 
-    def GetAccuracy(self,source, target):
+    def GetAccuracy(self, source, target):
 
         source_cpu = source.data.cpu().numpy()
         target_cpu = target.data.cpu().numpy()
@@ -422,12 +463,13 @@ class ACGAN(BaseNetwork):
         return num_correct
 
     def StatusReport(self, epoch, historical_discriminator_error,
-                                  historical_generator_error,
-                                  historical_discriminator_real,
-                                  historical_discriminator_fake,
-                                  historical_discriminator_accuracy):
+                     historical_generator_error,
+                     historical_discriminator_real,
+                     historical_discriminator_fake,
+                     historical_discriminator_accuracy,
+                     historical_discrimination_loss):
 
-        x = [i for i in range(1, epoch + 1)]
+        x = [(i + 1) * 100 for i in range(1, epoch + 1)]
         plt.title("Iteration vs Average Loss")
         plt.xlabel("Iteration")
         plt.ylabel("Average Loss")
@@ -438,15 +480,26 @@ class ACGAN(BaseNetwork):
 
         plt.close()
 
-        x = [i for i in range(0, len(historical_discriminator_accuracy))]
+        x = [(i + 1) * 100 for i in range(0, len(historical_discriminator_accuracy))]
         plt.title("Iteration vs Accuracy")
         plt.xlabel("Iteration")
         plt.ylabel("Average Accuracy")
-        plt.plot(x, historical_discriminator_real, marker='o', label='discriminator real')
-        plt.plot(x, historical_discriminator_fake, marker='o', label='discriminator fake')
-        plt.plot(x, historical_discriminator_accuracy, marker='o', label='discriminator total')
+        plt.plot(x, historical_discriminator_real, marker='o', label='class real')
+        plt.plot(x, historical_discriminator_fake, marker='o', label='class fake')
+        plt.plot(x, historical_discriminator_accuracy, marker='o', label='class total')
         plt.legend(loc='best')
         plt.savefig('./saves/epoch_{}_accuracy.png'.format(epoch))
+
+        plt.close()
+
+
+        x = [(i + 1) * 100 for i in range(0, len(historical_discriminator_accuracy))]
+        plt.title("Iteration vs Discriminator Loss")
+        plt.xlabel("Iteration")
+        plt.ylabel("Average Discriminator Loss")
+        plt.plot(x, historical_discriminator_real, marker='o', label='discriminator loss')
+        plt.legend(loc='best')
+        plt.savefig('./saves/epoch_{}_disc_loss.png'.format(epoch))
 
         plt.close()
 
@@ -471,8 +524,7 @@ class ACGAN(BaseNetwork):
         out = (image + 1) / 2
         out.clamp_(0, 1)
 
-        vutils.save_image(out, "{}_current_samples_{}_fake.png".format(path, self.datasets[0]["type"]),nrow=1)
-
+        vutils.save_image(out, "{}_current_samples_{}_fake.png".format(path, self.datasets[0]["type"]), nrow=1)
 
     def SaveModels(self, temp_epoch=None):
 
@@ -483,11 +535,9 @@ class ACGAN(BaseNetwork):
         learning_string = learning_string[learning_string.find('.'):]
 
         filename = "./saves/epochs_{}_batch_{}_learning_{}".format(temp_epoch, self.batch_size,
-                                                                                    learning_string)
-        self.Save(filename+"_discriminator.pt",self.discriminator)
-        self.Save(filename+"_generator.pt", self.generator)
-
-
+                                                                   learning_string)
+        self.Save(filename + "_discriminator.pt", self.discriminator)
+        self.Save(filename + "_generator.pt", self.generator)
 
     def Load(self, path, obj):
         path = path
@@ -500,10 +550,8 @@ class ACGAN(BaseNetwork):
                 obj.load_state_dict(data.state_dict())
         return obj
 
-
     def Save(self, path, obj):
         if not os.path.exists("./saves"):
             os.mkdir("./saves")
 
         obj = save(obj, path)
-
