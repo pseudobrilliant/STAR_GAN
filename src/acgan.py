@@ -178,8 +178,8 @@ class ACGAN(BaseNetwork):
                 print("\tAverage Generator Loss: {}".format(generator_error))
 
             if self.report_period and (epoch + 1) % self.report_period == 0:
-                historical_discriminator_error.append(total_discriminator_error / ((epoch+1) /self.report_period))
-                historical_generator_error.append(total_generator_error / ((epoch+1) /self.report_period))
+                historical_discriminator_error.append(total_discriminator_error / (epoch+1))
+                historical_generator_error.append(total_generator_error / (epoch+1))
                 real_acc, fake_acc, total_acc, disc_loss = self.Validation()
                 historical_discriminator_real.append(real_acc)
                 historical_discriminator_fake.append(fake_acc)
